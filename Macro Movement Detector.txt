@@ -1,0 +1,249 @@
+Private Const FileName = "C:\Stanley\Tugas IFRS17\Reserving\202503\R Studio\[File Name].xlsm"
+Private Const StDevX = 1 'Pilih 2 (dicurigai) atau 3 (ekstrim)
+
+
+Private Sub MovementILR()
+
+    Dim wsn As Worksheet
+    Dim wsg As Worksheet
+    Dim wb As Workbook
+    Dim wst As Worksheet
+    Dim RecSet As ADODB.Recordset
+    Dim gvala As Single
+    Dim gvalb As Single
+    Dim nvala As Single
+    Dim nvalb As Single
+    Dim lastRow As Integer
+    Dim gmean As Single
+    Dim nmean As Single
+    Dim gstd As Single
+    Dim nstd As Single
+    
+    Set wst = ThisWorkbook.Sheets("R Dataset")
+    wst.Cells.ClearContents
+    wst.Cells(1, 1).Value = "Field"
+    wst.Cells(1, 2).Value = "LoB"
+    wst.Cells(1, 3).Value = "Loss - Quarter (YYYYQn)"
+'    wst.Cells(1, 4).Value = "gmean"
+'    wst.Cells(1, 5).Value = "gstd"
+'    wst.Cells(1, 6).Value = "gvalue"
+'    wst.Cells(1, 7).Value = "gcheck"
+'    wst.Cells(1, 8).Value = "nmean"
+'    wst.Cells(1, 9).Value = "nstd"
+'    wst.Cells(1, 10).Value = "nvalue"
+'    wst.Cells(1, 11).Value = "ncheck"
+    
+    Set wb = Workbooks.Open(FileName, UpdateLinks:=0)
+    
+    Set RecSet = ReservingList
+    RecSet.MoveFirst
+    
+    Do While Not RecSet.EOF
+        
+        Debug.Print RecSet.Fields("Sheet Name CL").Value
+        
+        'INCURRED LOSS RATIO
+        
+        Set wsn = wb.Sheets(RecSet.Fields("Sheet Name CL").Value & "_Net")
+        Set wsg = wb.Sheets(RecSet.Fields("Sheet Name CL").Value & "_Grs")
+        
+        'Triangle before Last AQ
+        For i = 1 To 23
+            
+            gval = Abs(wsg.Cells(429 + i, 26 - i).Value - wsg.Cells(429 + i, 25 - i).Value)
+            nval = Abs(wsn.Cells(429 + i, 26 - i).Value - wsn.Cells(429 + i, 25 - i).Value)
+            
+            If gval >= 0.03 Or nval >= 0.03 Then
+                
+                lastRow = wst.Cells(wst.Rows.Count, 1).End(xlUp).Row + 1
+                
+                wst.Cells(lastRow, 1).Value = "Incurred Loss Ratio Movement"
+                wst.Cells(lastRow, 2).Value = RecSet.Fields("Lob Tag").Value
+                wst.Cells(lastRow, 3).Value = Left(wsg.Cells(429 + i, 1), 4) & Right(wsg.Cells(429 + i, 1), 2)
+
+            End If
+            
+        Next i
+        
+        'Triangle Last AQ
+        gmean = Application.WorksheetFunction.Average(wsg.Range("B449:B453"))
+        nmean = Application.WorksheetFunction.Average(wsn.Range("B449:B453"))
+        
+        gstd = Application.WorksheetFunction.StDev_P(wsg.Range("B449:B453"))
+        nstd = Application.WorksheetFunction.StDev_P(wsn.Range("B449:B453"))
+        
+        gvala = gmean + (StDevX * gstd)
+        gvalb = gmean - (StDevX * gstd)
+        
+        nvala = nmean + (StDevX * nstd)
+        nvalb = nmean - (StDevX * nstd)
+        
+        If (wsg.Cells(453, 2).Value > gvala Or wsg.Cells(453, 2).Value < gvalb) Or (wsn.Cells(453, 2).Value > nvala Or wsn.Cells(453, 2).Value < nvalb) Then
+            
+            lastRow = wst.Cells(wst.Rows.Count, 1).End(xlUp).Row + 1
+                
+            wst.Cells(lastRow, 1).Value = "Incurred Loss Ratio Movement"
+            wst.Cells(lastRow, 2).Value = RecSet.Fields("Lob Tag").Value
+            wst.Cells(lastRow, 3).Value = Left(wsg.Cells(453, 1), 4) & Right(wsg.Cells(453, 1), 2)
+'            wst.Cells(lastRow, 4).Value = gmean
+'            wst.Cells(lastRow, 5).Value = gstd
+'            wst.Cells(lastRow, 6).Value = wsg.Cells(453, 2).Value
+'            wst.Cells(lastRow, 7).Value = gval
+'            wst.Cells(lastRow, 8).Value = nmean
+'            wst.Cells(lastRow, 9).Value = nstd
+'            wst.Cells(lastRow, 10).Value = wsn.Cells(453, 2).Value
+'            wst.Cells(lastRow, 11).Value = nval
+        
+        End If
+        
+        
+        'AVERAGE VS EXPECTED
+        
+        Set wsn = wb.Sheets("AvE_Net")
+        Set wsg = wb.Sheets("AvE_Gross")
+        
+        For i = 1 To 20
+            
+            If wsg.Cells(RecSet.Fields("AvE Row").Value - 1 + i, 4).Value > 10000 Or wsn.Cells(RecSet.Fields("AvE Row").Value - 1 + i, 4).Value > 10000 Then
+                
+                lastRow = wst.Cells(wst.Rows.Count, 1).End(xlUp).Row + 1
+                
+                wst.Cells(lastRow, 1).Value = "A>E"
+                wst.Cells(lastRow, 2).Value = RecSet.Fields("Lob Tag").Value
+                wst.Cells(lastRow, 3).Value = Left(wsg.Cells(RecSet.Fields("AvE Row").Value - 1 + i, 1), 4) & Right(wsg.Cells(RecSet.Fields("AvE Row").Value - 1 + i, 1), 2)
+            
+            End If
+        
+        Next i
+        
+        RecSet.MoveNext
+    Loop
+    
+    MsgBox "Done"
+
+End Sub
+
+
+Private Function ReservingList() As ADODB.Recordset
+    Dim rs As ADODB.Recordset
+    Set rs = New ADODB.Recordset
+    
+    With rs
+        Set .ActiveConnection = Nothing
+        .CursorLocation = adUseClient
+        .Fields.Append "Sheet Name CL", adVarChar, 200
+        .Fields.Append "Lob Tag", adVarChar, 200
+        .Fields.Append "AvE Row", adInteger
+        .Open
+        
+        .AddNew
+        .Fields("Sheet Name CL").Value = "Auto-OD PartialLoss Comb"
+        .Fields("Lob Tag").Value = "Auto - Partial Loss Grs/Net"
+        .Fields("AvE Row").Value = 838
+        .Update
+
+        .AddNew
+        .Fields("Sheet Name CL").Value = "Auto-OD TotLoss_Mcycle"
+        .Fields("Lob Tag").Value = "Auto Total Loss Motorcycle Grs/Net"
+        .Fields("AvE Row").Value = 904
+        .Update
+
+        .AddNew
+        .Fields("Sheet Name CL").Value = "Auto-OD TotLoss_Non-Mcycle"
+        .Fields("Lob Tag").Value = "Auto Total Loss Non Motorcycle Grs/Net"
+        .Fields("AvE Row").Value = 970
+        .Update
+
+        .AddNew
+        .Fields("Sheet Name CL").Value = "Auto-TP"
+        .Fields("Lob Tag").Value = "Auto TP"
+        .Fields("AvE Row").Value = 1036
+        .Update
+
+'        .AddNew
+'        .Fields("Sheet Name CL").Value = "Auto"
+'        .Fields("Lob Tag").Value = "\Auto"
+'        .Update
+
+        .AddNew
+        .Fields("Sheet Name CL").Value = "Eng-All"
+        .Fields("Lob Tag").Value = "Engineering-All_Grs/Net"
+        .Fields("AvE Row").Value = 112
+        .Update
+
+        .AddNew
+        .Fields("Sheet Name CL").Value = "Fire-All"
+        .Fields("Lob Tag").Value = "Fire-All_Grs/Net"
+        .Fields("AvE Row").Value = 178
+        .Update
+
+        .AddNew
+        .Fields("Sheet Name CL").Value = "Marine-Other"
+        .Fields("Lob Tag").Value = "Marine-Other_Grs/Net"
+        .Fields("AvE Row").Value = 310
+        .Update
+
+        .AddNew
+        .Fields("Sheet Name CL").Value = "Marine-ECommerce"
+        .Fields("Lob Tag").Value = "Marine-Ecomm_Grs/Net"
+        .Fields("AvE Row").Value = 376
+        .Update
+
+        .AddNew
+        .Fields("Sheet Name CL").Value = "Liability-All"
+        .Fields("Lob Tag").Value = "Liability-All_Grs/Net"
+        .Fields("AvE Row").Value = 244
+        .Update
+
+        .AddNew
+        .Fields("Sheet Name CL").Value = "PA-Retail"
+        .Fields("Lob Tag").Value = "PA-Retail_Grs/Net"
+        .Fields("AvE Row").Value = 442
+        .Update
+
+        .AddNew
+        .Fields("Sheet Name CL").Value = "PA-Commercial"
+        .Fields("Lob Tag").Value = "PA-Commercial_Grs/Net"
+        .Fields("AvE Row").Value = 508
+        .Update
+
+        .AddNew
+        .Fields("Sheet Name CL").Value = "Travel-Commercial"
+        .Fields("Lob Tag").Value = "Travel-Commercial_Grs/Net"
+        .Fields("AvE Row").Value = 706
+        .Update
+
+        .AddNew
+        .Fields("Sheet Name CL").Value = "Travel-Retail"
+        .Fields("Lob Tag").Value = "Travel-Retail_Grs/Net"
+        .Fields("AvE Row").Value = 640
+        .Update
+
+        .AddNew
+        .Fields("Sheet Name CL").Value = "TradeCredit-All"
+        .Fields("Lob Tag").Value = "TradeCredit-All_Grs/Net"
+        .Fields("AvE Row").Value = 772
+        .Update
+
+        .AddNew
+        .Fields("Sheet Name CL").Value = "Various-All"
+        .Fields("Lob Tag").Value = "Various-All_Grs/Net"
+        .Fields("AvE Row").Value = 574
+        .Update
+
+        .AddNew
+        .Fields("Sheet Name CL").Value = "Health-All"
+        .Fields("Lob Tag").Value = "Health-All_Grs/Net"
+        .Fields("AvE Row").Value = 1100
+        .Update
+        
+        .AddNew
+        .Fields("Sheet Name CL").Value = "Various-ECommerce"
+        .Fields("Lob Tag").Value = "Various-Ecomm_Grs/Net"
+        .Fields("AvE Row").Value = 2000
+        .Update
+        
+    End With
+    
+    Set ReservingList = rs
+End Function
